@@ -49,9 +49,8 @@ def step_impl(context):
     # Remove the file if it already exists
     if os.path.exists(file_path):
         os.remove(file_path)
-    f = open(file_path, 'w')
-    f.write(str(context.drr))
-    f.close()
+    with open(file_path, 'w') as f:
+        f.write(str(context.drr))
 
 
 @then(u'encrypted_data should not be equal to data')

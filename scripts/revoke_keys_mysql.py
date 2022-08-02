@@ -25,10 +25,11 @@ def revoke_envelope_key_record_by_key(connection, execute_flag, id, created):
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(SELECT_BY_KEY_QUERY, (id, created))
-        row = cursor.fetchone()
+        if row := cursor.fetchone():
+            logger.info(
+                f'Found envelope key record for id={id}, created={created}. Revoking...'
+            )
 
-        if row:
-            logger.info('Found envelope key record for id={}, created={}. Revoking...'.format(id, created))
 
             envelope_key_record_json = json.loads(row['key_record'])
             envelope_key_record_json['Revoked'] = True
@@ -37,13 +38,16 @@ def revoke_envelope_key_record_by_key(connection, execute_flag, id, created):
                 cursor.execute(UPDATE_KEY_RECORD_BY_KEY_QUERY, (json.dumps(envelope_key_record_json, separators=(',', ":")), id, created))
                 connection.commit()
 
-                logger.info('Marked {} keys revoked successfully!'.format(cursor.rowcount))
+                logger.info(f'Marked {cursor.rowcount} keys revoked successfully!')
             else:
                 envelope_key_record_json['Key'] = '<REDACTED>'
                 logger.info('DRY-RUN query={}'.format(UPDATE_KEY_RECORD_BY_KEY_QUERY %
                                                       (json.dumps(envelope_key_record_json, separators=(',', ":")), id, created)))
         else:
-            logger.warning('Envelope key record for id={}, created={} not found!'.format(id, created))
+            logger.warning(
+                f'Envelope key record for id={id}, created={created} not found!'
+            )
+
     finally:
         cursor.close()
 
@@ -59,9 +63,16 @@ def revoke_system_keys_by_created(connection, execute_flag, created):
 def revoke_envelope_key_records_by_created_and_id_prefix(connection, execute_flag, created, id_prefix):
     cursor = connection.cursor(dictionary=True)
     try:
-        cursor.execute(SELECT_BY_CREATED_BEFORE_AND_ID_PREFIX_QUERY, (created, '{}%'.format(id_prefix)))
+        cursor.execute(
+            SELECT_BY_CREATED_BEFORE_AND_ID_PREFIX_QUERY,
+            (created, f'{id_prefix}%'),
+        )
+
         # TODO For some reason, rowcount comes back as -1. Wonder if it appears after a fetch?
-        logger.info('Fetched {} rows to revoke using id_prefix={}, created<{}'.format(cursor.rowcount, id_prefix, created))
+        logger.info(
+            f'Fetched {cursor.rowcount} rows to revoke using id_prefix={id_prefix}, created<{created}'
+        )
+
 
         update_tuples = []
         for row in iter_row(cursor, 100):
@@ -77,21 +88,23 @@ def revoke_envelope_key_records_by_created_and_id_prefix(connection, execute_fla
             if execute_flag:
                 # Apparently this may not actually be optimized to a bulk update currently, but maybe it will be someday?
                 cursor.executemany(UPDATE_KEY_RECORD_BY_KEY_QUERY, update_tuples)
-                logger.info('Marked {} keys revoked successfully!'.format(cursor.rowcount))
+                logger.info(f'Marked {cursor.rowcount} keys revoked successfully!')
                 connection.commit()
             else:
-                logger.info('DRY-RUN would have run query={} for {} keys'.format(UPDATE_KEY_RECORD_BY_KEY_QUERY, len(update_tuples)))
+                logger.info(
+                    f'DRY-RUN would have run query={UPDATE_KEY_RECORD_BY_KEY_QUERY} for {len(update_tuples)} keys'
+                )
+
     finally:
         cursor.close()
 
 
 def iter_row(cursor, size=100):
     while True:
-        rows = cursor.fetchmany(size)
-        if not rows:
+        if rows := cursor.fetchmany(size):
+            yield from rows
+        else:
             break
-        for row in rows:
-            yield row
 
 
 if __name__ == '__main__':
@@ -124,11 +137,9 @@ if __name__ == '__main__':
     try:
         if arguments.action == 'single':
             revoke_envelope_key_record_by_key(connection, execute_flag, arguments.id, arguments.created)
+        elif arguments.type == 'system':
+            revoke_system_keys_by_created(connection, execute_flag, arguments.created_before)
         else:
-            # bulk action
-            if arguments.type == 'system':
-                revoke_system_keys_by_created(connection, execute_flag, arguments.created_before)
-            else:
-                revoke_intermediate_keys_by_created(connection, execute_flag, arguments.created_before)
+            revoke_intermediate_keys_by_created(connection, execute_flag, arguments.created_before)
     finally:
         connection.close()

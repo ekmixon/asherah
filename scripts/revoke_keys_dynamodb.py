@@ -22,7 +22,7 @@ PARTITION_KEY = 'Id'
 SORT_KEY = 'Created'
 KEY_RECORD = 'KeyRecord'
 REVOKED = 'Revoked'
-KEY_RECORD_REVOKED_FULLY_QUALIFIED = '{}.{}'.format(KEY_RECORD, REVOKED)
+KEY_RECORD_REVOKED_FULLY_QUALIFIED = f'{KEY_RECORD}.{REVOKED}'
 
 
 def revoke_envelope_key_record_by_key(table, execute_flag, id, created):
@@ -35,31 +35,40 @@ def revoke_envelope_key_record_by_key(table, execute_flag, id, created):
     )
 
     if get_response.get('Item'):
-        logger.info('Found envelope key record for id={}, created={}. Revoking...'.format(id, created))
+        logger.info(
+            f'Found envelope key record for id={id}, created={created}. Revoking...'
+        )
+
 
         item = get_response['Item']
 
         # Revoked flag may not exist so handle nil case
         if item[KEY_RECORD].get(REVOKED) and item[KEY_RECORD][REVOKED]:
-            logger.warning('Envelope key record for id={}, created={} already revoked!'.format(id, created))
-        else:
-            if execute_flag:
-                table.update_item(
-                    Key={
-                        PARTITION_KEY: id,
-                        SORT_KEY: created
-                    },
-                    UpdateExpression='set {} = :r'.format(KEY_RECORD_REVOKED_FULLY_QUALIFIED),
-                    ExpressionAttributeValues={
-                        ':r': True
-                    }
-                )
+            logger.warning(
+                f'Envelope key record for id={id}, created={created} already revoked!'
+            )
 
-                logger.info('Marked envelope key record for id={}, created={} revoked successfully!'.format(id, created))
-            else:
-                logger.info('DRY-RUN update_item for id={}, created={} and set {} = {}'.format(id, created, KEY_RECORD_REVOKED_FULLY_QUALIFIED, True))
+        elif execute_flag:
+            table.update_item(
+                Key={PARTITION_KEY: id, SORT_KEY: created},
+                UpdateExpression=f'set {KEY_RECORD_REVOKED_FULLY_QUALIFIED} = :r',
+                ExpressionAttributeValues={':r': True},
+            )
+
+
+            logger.info(
+                f'Marked envelope key record for id={id}, created={created} revoked successfully!'
+            )
+
+        else:
+            logger.info(
+                f'DRY-RUN update_item for id={id}, created={created} and set {KEY_RECORD_REVOKED_FULLY_QUALIFIED} = True'
+            )
+
     else:
-        logger.warning('Envelope key record for id={}, created={} not found!'.format(id, created))
+        logger.warning(
+            f'Envelope key record for id={id}, created={created} not found!'
+        )
 
 
 def revoke_intermediate_keys_by_created(table, execute_flag, created):
@@ -73,7 +82,10 @@ def revoke_system_keys_by_created(table, execute_flag, created):
 def revoke_envelope_key_records_by_created_and_id_prefix(table, execute_flag, created, id_prefix):
     results = get_all_items_to_revoke(table, created, id_prefix)
 
-    logger.info('Fetched {} rows to revoke using id_prefix={}, created<{}'.format(len(results), id_prefix, created))
+    logger.info(
+        f'Fetched {len(results)} rows to revoke using id_prefix={id_prefix}, created<{created}'
+    )
+
 
     # Sort by created to distribute across partitions (avoid hot partitions)
     results = sorted(results, key=lambda i: i[SORT_KEY])
@@ -85,9 +97,11 @@ def revoke_envelope_key_records_by_created_and_id_prefix(table, execute_flag, cr
                 item[KEY_RECORD][REVOKED] = True
                 batch.put_item(item)
 
-        logger.info('Marked {} keys revoked successfully!'.format(len(results)))
+        logger.info(f'Marked {len(results)} keys revoked successfully!')
     else:
-        logger.info('DRY-RUN would have run batch_writer.put_item for {} keys'.format(len(results)))
+        logger.info(
+            f'DRY-RUN would have run batch_writer.put_item for {len(results)} keys'
+        )
 
 
 def get_all_items_to_revoke(table, created, id_prefix):
@@ -147,9 +161,7 @@ if __name__ == '__main__':
     table = dynamodb.Table(TABLE_NAME)
     if arguments.action == 'single':
         revoke_envelope_key_record_by_key(table, execute_flag, arguments.id, arguments.created)
+    elif arguments.type == 'system':
+        revoke_system_keys_by_created(table, execute_flag, arguments.created_before)
     else:
-        # bulk action
-        if arguments.type == 'system':
-            revoke_system_keys_by_created(table, execute_flag, arguments.created_before)
-        else:
-            revoke_intermediate_keys_by_created(table, execute_flag, arguments.created_before)
+        revoke_intermediate_keys_by_created(table, execute_flag, arguments.created_before)

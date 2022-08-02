@@ -158,7 +158,7 @@ def random_string(length: int = 12) -> str:
     """Generate a random string of fixed length."""
 
     letters = string.ascii_lowercase
-    return ''.join(random.choice(letters) for i in range(length))
+    return ''.join(random.choice(letters) for _ in range(length))
 
 
 def run_client_test(client: SessionClient):

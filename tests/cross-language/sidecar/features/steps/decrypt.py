@@ -15,7 +15,7 @@ import appencryption_pb2
 @given(u'I have encrypted_data from "{filename}"')
 def step_impl(context, filename):
     assert filename != ''
-    context.filename = '/tmp/' + filename
+    context.filename = f'/tmp/{filename}'
     f = open(context.filename, 'r')
     context.drr = f.read()
 
